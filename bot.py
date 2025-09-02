@@ -5,6 +5,8 @@ import asyncio
 import requests
 import discord
 from discord.ext import commands
+import threading
+import socket
 
 # --- CONFIGURATION ---
 DEFAULT_API_URL = "https://ds.rg.dedyn.io/ht/getServer"
@@ -50,7 +52,11 @@ def format_embed(servers, query):
         address = f"{server.get('ip')}:{server.get('port')}" if server.get("ip") and server.get("port") else "N/A"
         players = f"{server.get('numPlayers', '?')}/{server.get('maxPlayers', '?')}"
         map_name = server.get("mapName", "N/A").split("-")[0].strip()
-        embed.add_field(name=name, value=f"📡 `{address}`\n👥 {players}\n🗺️ {map_name}", inline=False)
+        embed.add_field(
+            name=name,
+            value=f"📡 `{address}`\n👥 {players}\n🗺️ {map_name}",
+            inline=False
+        )
     embed.set_footer(text=f"Live data | Refreshes every {REFRESH_INTERVAL} seconds.")
     return embed
 
@@ -112,22 +118,20 @@ async def ark(ctx, *, query: str):
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
+# --- DUMMY SERVER TO SATISFY RENDER ---
+def dummy_server():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', DUMMY_PORT))
+        s.listen(1)
+        while True:
+            conn, addr = s.accept()
+            conn.close()
+
+threading.Thread(target=dummy_server, daemon=True).start()
+
 # --- RUN BOT ---
 if __name__ == "__main__":
     if not BOT_TOKEN:
         print("Error: DISCORD_BOT_TOKEN not set in environment")
     else:
-        # Dummy server to satisfy Render port requirements
-        import threading
-        import socket
-
-        def dummy_server():
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('', DUMMY_PORT))
-                s.listen(1)
-                while True:
-                    conn, addr = s.accept()
-                    conn.close()
-
-        threading.Thread(target=dummy_server, daemon=True).start()
         bot.run(BOT_TOKEN)
