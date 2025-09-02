@@ -6,13 +6,13 @@ import requests
 import discord
 from discord.ext import commands
 import threading
-import socket
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # --- CONFIGURATION ---
 DEFAULT_API_URL = "https://ds.rg.dedyn.io/ht/getServer"
 REFRESH_INTERVAL = 4       # seconds
 UPDATE_DURATION = 300      # 5 minutes per search
-DUMMY_PORT = int(os.environ.get("PORT", 8000))  # Render requires a port
+PORT = int(os.environ.get("PORT", 8000))  # Render requires a port
 
 # --- BOT SETUP ---
 intents = discord.Intents.default()
@@ -53,9 +53,7 @@ def format_embed(servers, query):
         players = f"{server.get('numPlayers', '?')}/{server.get('maxPlayers', '?')}"
         map_name = server.get("mapName", "N/A").split("-")[0].strip()
         embed.add_field(
-            name=name,
-            value=f"📡 `{address}`\n👥 {players}\n🗺️ {map_name}",
-            inline=False
+            name=name, value=f"📡 `{address}`\n👥 {players}\n🗺️ {map_name}", inline=False
         )
     embed.set_footer(text=f"Live data | Refreshes every {REFRESH_INTERVAL} seconds.")
     return embed
@@ -118,16 +116,31 @@ async def ark(ctx, *, query: str):
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
-# --- DUMMY SERVER TO SATISFY RENDER ---
-def dummy_server():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', DUMMY_PORT))
-        s.listen(1)
-        while True:
-            conn, addr = s.accept()
-            conn.close()
+# --- MINIMAL HTTP SERVER FOR RENDER ---
+class DummyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"Bot is alive!")
 
-threading.Thread(target=dummy_server, daemon=True).start()
+def run_server():
+    server = HTTPServer(("", PORT), DummyHandler)
+    server.serve_forever()
+
+threading.Thread(target=run_server, daemon=True).start()
+
+# --- OPTIONAL HEARTBEAT ---
+def keep_alive():
+    import requests
+    while True:
+        try:
+            requests.get(f"http://localhost:{PORT}")
+        except:
+            pass
+        time.sleep(60)
+
+threading.Thread(target=keep_alive, daemon=True).start()
 
 # --- RUN BOT ---
 if __name__ == "__main__":
