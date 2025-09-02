@@ -1,28 +1,28 @@
 import os
 import re
+import time
 import asyncio
 import requests
 import discord
-import time
 from discord.ext import commands
-#
+
 # --- CONFIGURATION ---
 DEFAULT_API_URL = "https://ds.rg.dedyn.io/ht/getServer"
-REFRESH_INTERVAL = 4  # seconds
-UPDATE_DURATION = 300 # How long to keep updating in seconds (300s = 5 minutes)
+REFRESH_INTERVAL = 4       # seconds
+UPDATE_DURATION = 300      # 5 minutes per search
+DUMMY_PORT = int(os.environ.get("PORT", 8000))  # Render requires a port
 
 # --- BOT SETUP ---
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
-
 BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
 
-# This dictionary will store the active search for each channel
-# Format: { channel_id: {'message': discord.Message, 'task': asyncio.Task} }
-active_searches = {}
+# Active search storage per channel
+active_searches = {}  # { channel_id: {'message': discord.Message, 'task': asyncio.Task} }
+locks = {}            # per-channel locks to prevent overlapping edits
 
-# --- HELPER FUNCTIONS (fetch, filter, format) ---
+# --- HELPER FUNCTIONS ---
 def fetch_servers():
     try:
         response = requests.get(DEFAULT_API_URL, timeout=10)
@@ -46,31 +46,33 @@ def format_embed(servers, query):
         color=discord.Color.green()
     )
     for server in servers[:10]:
-        name, address, players, map_name = (server.get("name", "N/A"),
-                                          f"{server.get('ip')}:{server.get('port')}" if server.get("ip") and server.get("port") else "N/A",
-                                          f"{server.get('numPlayers', '?')}/{server.get('maxPlayers', '?')}",
-                                          server.get("mapName", "N/A").split("-")[0].strip())
+        name = server.get("name", "N/A")
+        address = f"{server.get('ip')}:{server.get('port')}" if server.get("ip") and server.get("port") else "N/A"
+        players = f"{server.get('numPlayers', '?')}/{server.get('maxPlayers', '?')}"
+        map_name = server.get("mapName", "N/A").split("-")[0].strip()
         embed.add_field(name=name, value=f"📡 `{address}`\n👥 {players}\n🗺️ {map_name}", inline=False)
     embed.set_footer(text=f"Live data | Refreshes every {REFRESH_INTERVAL} seconds.")
     return embed
 
-async def update_task(message: discord.Message, query: str):
-    """This function is the update loop, now separated to be a cancellable task."""
+# --- UPDATE TASK ---
+async def update_task(message: discord.Message, query: str, channel_id: int):
+    locks.setdefault(channel_id, asyncio.Lock())
+    lock = locks[channel_id]
     end_time = time.time() + UPDATE_DURATION
     try:
         while time.time() < end_time:
             await asyncio.sleep(REFRESH_INTERVAL)
             servers = fetch_servers()
             matches = filter_servers(servers, query)
-            await message.edit(embed=format_embed(matches, query))
+            async with lock:
+                try:
+                    await message.edit(embed=format_embed(matches, query))
+                except discord.NotFound:
+                    break
     except asyncio.CancelledError:
-        # The task was cancelled by a new command, which is expected.
-        pass
-    except discord.NotFound:
-        # The message was deleted manually.
         pass
     finally:
-        # Edit the message one last time to show it's no longer updating.
+        active_searches.pop(channel_id, None)
         try:
             final_embed = message.embeds[0]
             final_embed.set_footer(text="This search is no longer updating.")
@@ -79,37 +81,53 @@ async def update_task(message: discord.Message, query: str):
         except (discord.NotFound, IndexError):
             pass
 
+# --- COMMAND ---
 @bot.command(name="ark")
 async def ark(ctx, *, query: str):
     channel_id = ctx.channel.id
 
-    # 1. Check for and clean up an old search in the same channel
+    # Cancel old search in this channel
     if channel_id in active_searches:
         old_search = active_searches[channel_id]
         old_task = old_search['task']
         old_message = old_search['message']
-
-        old_task.cancel()  # Stop the old update loop
+        old_task.cancel()
+        await asyncio.sleep(0)
         try:
-            await old_message.delete()  # Delete the old message
+            await old_message.delete()
         except discord.NotFound:
-            pass  # It was already deleted, no problem.
+            pass
 
-    # 2. Send the new initial message
-    initial_servers = fetch_servers()
-    matches = filter_servers(initial_servers, query)
+    # Send new message
+    servers = fetch_servers()
+    matches = filter_servers(servers, query)
     new_msg = await ctx.send(embed=format_embed(matches, query))
 
-    # 3. Create and store the new task and message
-    new_task = bot.loop.create_task(update_task(new_msg, query))
+    # Store task
+    new_task = bot.loop.create_task(update_task(new_msg, query, channel_id))
     active_searches[channel_id] = {'message': new_msg, 'task': new_task}
 
+# --- READY EVENT ---
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
+# --- RUN BOT ---
 if __name__ == "__main__":
     if not BOT_TOKEN:
         print("Error: DISCORD_BOT_TOKEN not set in environment")
     else:
+        # Dummy server to satisfy Render port requirements
+        import threading
+        import socket
+
+        def dummy_server():
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('', DUMMY_PORT))
+                s.listen(1)
+                while True:
+                    conn, addr = s.accept()
+                    conn.close()
+
+        threading.Thread(target=dummy_server, daemon=True).start()
         bot.run(BOT_TOKEN)
