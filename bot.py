@@ -51,20 +51,35 @@ def format_embed(servers, query):
 
 @bot.command()
 async def search(ctx, *, query: str):
-    servers = fetch_servers()
-    matches = filter_servers(servers, query)
-    msg = await ctx.send(embed=format_embed(matches, query))
+    last_msg = None  # keep track of the last message sent
 
     async def refresher():
+        nonlocal last_msg
         while True:
             await asyncio.sleep(REFRESH_INTERVAL)
             servers = fetch_servers()
             matches = filter_servers(servers, query)
-            try:
-                await msg.edit(embed=format_embed(matches, query))
-            except discord.NotFound:
-                break
+            new_embed = format_embed(matches, query)
 
+            # Delete previous message if exists
+            if last_msg:
+                try:
+                    await last_msg.delete()
+                except discord.NotFound:
+                    pass
+
+            # Send new message and update last_msg
+            try:
+                last_msg = await ctx.send(embed=new_embed)
+            except discord.Forbidden:
+                break  # can't send messages, stop updating
+
+    # Initial send
+    servers = fetch_servers()
+    matches = filter_servers(servers, query)
+    last_msg = await ctx.send(embed=format_embed(matches, query))
+
+    # Start refresher task
     bot.loop.create_task(refresher())
 
 @bot.event
