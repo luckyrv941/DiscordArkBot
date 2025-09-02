@@ -49,8 +49,8 @@ def format_embed(servers, query):
     embed.set_footer(text="Data refreshes automatically every few seconds.")
     return embed
 
-@bot.command()
-async def search(ctx, *, query: str):
+@bot.command(name="ark")  # command is now !ark
+async def ark(ctx, *, query: str):
     last_msg = None  # keep track of the last message sent
 
     async def refresher():
@@ -61,18 +61,16 @@ async def search(ctx, *, query: str):
             matches = filter_servers(servers, query)
             new_embed = format_embed(matches, query)
 
-            # Delete previous message if exists
             if last_msg:
                 try:
                     await last_msg.delete()
                 except discord.NotFound:
                     pass
 
-            # Send new message and update last_msg
             try:
                 last_msg = await ctx.send(embed=new_embed)
             except discord.Forbidden:
-                break  # can't send messages, stop updating
+                break
 
     # Initial send
     servers = fetch_servers()
@@ -81,7 +79,6 @@ async def search(ctx, *, query: str):
 
     # Start refresher task
     bot.loop.create_task(refresher())
-
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
