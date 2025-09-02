@@ -5,7 +5,7 @@ import requests
 import discord
 import time
 from discord.ext import commands
-
+#
 # --- CONFIGURATION ---
 DEFAULT_API_URL = "https://ds.rg.dedyn.io/ht/getServer"
 REFRESH_INTERVAL = 4  # seconds
