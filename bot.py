@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import sys
 import asyncio
 import requests
 import discord
@@ -13,6 +14,14 @@ DEFAULT_API_URL = "https://ds.rg.dedyn.io/ht/getServer"
 REFRESH_INTERVAL = 4       # seconds
 UPDATE_DURATION = 300      # 5 minutes per search
 PORT = int(os.environ.get("PORT", 8000))  # Render requires a port
+LOCK_FILE = "/tmp/bot.lock"                # singleton file to prevent double runs
+
+# --- SINGLETON CHECK ---
+if os.path.exists(LOCK_FILE):
+    print("Bot already running. Exiting.")
+    sys.exit(0)
+else:
+    open(LOCK_FILE, "w").close()
 
 # --- BOT SETUP ---
 intents = discord.Intents.default()
@@ -20,9 +29,9 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
 
-# Active search storage per channel
+# --- CLEAR OLD STATE ---
 active_searches = {}  # { channel_id: {'message': discord.Message, 'task': asyncio.Task} }
-locks = {}            # per-channel locks to prevent overlapping edits
+locks = {}            # per-channel locks
 
 # --- HELPER FUNCTIONS ---
 def fetch_servers():
