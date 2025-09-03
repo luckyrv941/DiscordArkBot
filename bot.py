@@ -55,7 +55,7 @@ def fetch_servers():
                 "numPlayers": s.get("NumPlayers", "?"),
                 "maxPlayers": s.get("MaxPlayers", "?"),
                 "mapName": s.get("MapName", "N/A").split("_")[0].strip(),  # clean _P
-                "ping": s.get("ServerPing", "?")
+                "ping": int(s.get("ServerPing", 0))  # make sure it's an integer
             })
         return servers
 
@@ -99,11 +99,12 @@ def format_embed(servers, query):
 
         players = f"{server.get('numPlayers', '?')}/{server.get('maxPlayers', '?')}"
         map_name = server.get("mapName", "N/A")
-        emoji = ping_emoji(server.get("ping"))
+        ping_value = server.get("ping", "?")
+        emoji = ping_emoji(ping_value)
 
         embed.add_field(
             name=name,
-            value=f"📡 `{address}`\n👥 {players}\n{emoji} Ping\n🗺️ {map_name}",
+            value=f"📡 `{address}`\n👥 {players}\n{emoji} {ping_value}ms\n🗺️ {map_name}",
             inline=False
         )
 
