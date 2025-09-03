@@ -10,7 +10,7 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # --- CONFIGURATION ---
-DEFAULT_API_URL = "https://ds.rg.dedyn.io/ht/getServer"
+DEFAULT_API_URL = "http://arkdedicated.com/arkuse/cache/officialarkuseserverlist.json"
 REFRESH_INTERVAL = 4       # seconds
 UPDATE_DURATION = 300      # 5 minutes per search
 PORT = int(os.environ.get("PORT", 8000))  # Render requires a port
@@ -39,8 +39,28 @@ def fetch_servers():
         response = requests.get(DEFAULT_API_URL, timeout=10)
         response.raise_for_status()
         data = response.json()
-        return data if isinstance(data, list) else []
-    except:
+
+        servers = []
+        for s in data:
+            # Normalize ARK JSON
+            name = s.get("SessionName", "N/A")
+            # Remove version tag like " - (v14.0)"
+            if " - (" in name:
+                name = name.split(" - (")[0].strip()
+
+            servers.append({
+                "name": name,
+                "ip": s.get("IP", None),
+                "port": s.get("Port", None),
+                "numPlayers": s.get("NumPlayers", "?"),
+                "maxPlayers": s.get("MaxPlayers", "?"),
+                "mapName": s.get("MapName", "N/A").split("_")[0].strip(),  # clean _P
+                "ping": s.get("ServerPing", "?")
+            })
+        return servers
+
+    except Exception as e:
+        print("Error fetching servers:", e)
         return []
 
 def filter_servers(servers, query):
@@ -56,14 +76,23 @@ def format_embed(servers, query):
         description=f"Showing {len(servers)} result(s)",
         color=discord.Color.green()
     )
+
     for server in servers[:10]:
         name = server.get("name", "N/A")
-        address = f"{server.get('ip')}:{server.get('port')}" if server.get("ip") and server.get("port") else "N/A"
+        ip = server.get("ip")
+        port = server.get("port")
+        address = f"{ip}:{port}" if ip and port else "N/A"
+
         players = f"{server.get('numPlayers', '?')}/{server.get('maxPlayers', '?')}"
-        map_name = server.get("mapName", "N/A").split("-")[0].strip()
+        ping = server.get("ping", "?")
+        map_name = server.get("mapName", "N/A")
+
         embed.add_field(
-            name=name, value=f"📡 `{address}`\n👥 {players}\n🗺️ {map_name}", inline=False
+            name=name,
+            value=f"📡 `{address}`\n👥 {players}\nPing {ping}\n🗺️ {map_name}",
+            inline=False
         )
+
     embed.set_footer(text=f"Live data | Refreshes every {REFRESH_INTERVAL} seconds.")
     return embed
 
