@@ -70,6 +70,20 @@ def filter_servers(servers, query):
     except re.error:
         return []
 
+def ping_emoji(ping_value):
+    if ping_value == "?" or ping_value is None:
+        return "❔"
+    try:
+        ping_value = int(ping_value)
+    except:
+        return "❔"
+    if ping_value < 50:
+        return "🟢"
+    elif ping_value < 100:
+        return "🟡"
+    else:
+        return "🔴"
+
 def format_embed(servers, query):
     embed = discord.Embed(
         title=f"Server Search: {query}",
@@ -84,12 +98,12 @@ def format_embed(servers, query):
         address = f"{ip}:{port}" if ip and port else "N/A"
 
         players = f"{server.get('numPlayers', '?')}/{server.get('maxPlayers', '?')}"
-        ping = server.get("ping", "?")
         map_name = server.get("mapName", "N/A")
+        emoji = ping_emoji(server.get("ping"))
 
         embed.add_field(
             name=name,
-            value=f"📡 `{address}`\n👥 {players}\nPing {ping}\n🗺️ {map_name}",
+            value=f"📡 `{address}`\n👥 {players}\n{emoji} Ping\n🗺️ {map_name}",
             inline=False
         )
 
